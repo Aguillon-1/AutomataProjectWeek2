@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini Tokenizer / Lexer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:light dark;--bg:#eef1f5;--panel:#fff;--ink:#14213d;--mute:#5b6577;--line:#d3d9e2;
+--KEYWORD:#7b3fa0;--IDENTIFIER:#0b6e8a;--NUMBER:#a15c00;--STRING:#2e7d32;--OPERATOR:#2f55c7;--DELIMITER:#5b6577;--ERROR:#c62828;--hl:#fff3b0;--errbg:#fdecea;--okbg:#e6f4ea}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#101826;--panel:#18233a;--ink:#e6ebf5;--mute:#9aa6bb;--line:#2b3a57;
+--KEYWORD:#c39be8;--IDENTIFIER:#6cc4dd;--NUMBER:#e8b05a;--STRING:#7fd08a;--OPERATOR:#8fa8f5;--DELIMITER:#a0a9b8;--ERROR:#ff8a80;--hl:#4a4310;--errbg:#3a1f26;--okbg:#17342a}}
+:root[data-theme=dark]{color-scheme:dark;--bg:#101826;--panel:#18233a;--ink:#e6ebf5;--mute:#9aa6bb;--line:#2b3a57;
+--KEYWORD:#c39be8;--IDENTIFIER:#6cc4dd;--NUMBER:#e8b05a;--STRING:#7fd08a;--OPERATOR:#8fa8f5;--DELIMITER:#a0a9b8;--ERROR:#ff8a80;--hl:#4a4310;--errbg:#3a1f26;--okbg:#17342a}
+:root[data-theme=light]{color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "IBM Plex Sans",system-ui,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:1.6rem;margin:0 0 4px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.sub{color:var(--mute);margin:0 0 20px}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:16px}
+@media (max-width:820px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px}
+h2{font-size:1rem;margin:0 0 10px}
+textarea,.code{width:100%;font:15px/1.6 "IBM Plex Mono",ui-monospace,monospace;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink);padding:10px}
+textarea{min-height:150px;resize:vertical}
+textarea.drop{border-color:var(--OPERATOR);border-style:dashed}
+.code{white-space:pre-wrap;min-height:60px;margin-top:10px;overflow-wrap:anywhere}
+.code span{border-radius:3px;cursor:pointer}
+.code span.on,tr.on{background:var(--hl)}
+.t-ERROR{text-decoration:underline wavy var(--ERROR)}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center}
+button,label.btn{font:inherit;font-size:.875rem;padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);cursor:pointer}
+button:hover,label.btn:hover{border-color:var(--OPERATOR)}
+:focus-visible{outline:2px solid var(--OPERATOR);outline-offset:2px}
+.tablewrap{overflow-x:auto;max-height:420px;overflow-y:auto}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th{text-align:left;position:sticky;top:0;background:var(--panel);border-bottom:1px solid var(--line);padding:6px 8px}
+td{padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+td.mono,.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+.chip{font-weight:600}
+.why{color:var(--mute);font-size:.82rem}
+.summary{margin-top:10px;color:var(--mute);font-size:.9rem}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:10px;font-size:.85rem}
+pre.rules{margin:0;white-space:pre-wrap;font:13.5px/1.6 "IBM Plex Mono",ui-monospace,monospace}
+details{margin-top:16px}
+summary{cursor:pointer;font-weight:600}
+/* ---- added: status, row states, hints, toolbar */
+.status{display:inline-block;margin-top:10px;padding:3px 10px;border-radius:999px;font-size:.85rem;font-weight:600;background:var(--okbg);color:var(--STRING)}
+.status.bad{background:var(--errbg);color:var(--ERROR)}
+tr.err td{background:var(--errbg)}
+tr.err.on td{background:var(--hl)}
+tbody tr{cursor:pointer}
+.hint{color:var(--mute);font-size:.8rem;margin:6px 0 0}
+.spacer{flex:1}
+.toolbar{margin:0 0 10px}
+.tablewrap{border:1px solid var(--line);border-radius:6px}
+button:active{transform:translateY(1px)}
+@media (max-width:820px){main{padding:16px 12px 40px}.tablewrap{max-height:320px}}
+</style>
+</head>
+<body>
+<main>
+<div class="top">
+  <div>
+    <h1>Mini Tokenizer / Lexer</h1>
+    <p class="sub">Type or load code. Each piece is labeled by the token language it belongs to.</p>
+  </div>
+  <button id="theme" type="button" aria-label="Switch light or dark theme">Theme</button>
+</div>
+
+<div class="grid">
+<section class="panel">
+  <h2>Source</h2>
+  <div class="row">
+    <button data-s="ok1">Sample: assignment</button>
+    <button data-s="ok2">Sample: loop</button>
+    <button data-s="ok3">Sample: mixed</button>
+    <button data-s="err1">Error: bad symbol</button>
+    <button data-s="err2">Error: open string</button>
+    <label class="btn" tabindex="0" id="filebtn">Open .txt<input type="file" id="file" accept=".txt,text/plain" hidden></label>
+    <span class="spacer"></span>
+    <button id="clear" type="button">Clear</button>
+  </div>
+  <textarea id="src" spellcheck="false" aria-label="Source code">total = price * 3 + 12;</textarea>
+  <p class="hint">You can also drop a .txt file onto the box.</p>
+  <div class="code" id="hl" aria-label="Highlighted source"></div>
+  <p class="hint">Click a colored piece to select it in the source box.</p>
+  <div class="legend" id="legend"></div>
+  <div class="status" id="status" role="status" aria-live="polite"></div>
+  <div class="summary" id="summary"></div>
+</section>
+
+<section class="panel">
+  <h2>Tokens</h2>
+  <div class="row toolbar">
+    <label><input type="checkbox" id="exp"> Explain why each token won</label>
+    <span class="spacer"></span>
+    <button id="copy" type="button">Copy tokens</button>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Line:Col</th><th>Type</th><th>Lexeme</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+</section>
+</div>
+
+<details class="panel" id="rulesbox"><summary>Token languages (rules)</summary><pre class="rules" id="rules"></pre></details>
+</main>
+
+<script>
+// ---- alphabets
+const KEYWORDS=["if","else","while","print"];
+const OPERATORS=["==","!=","<=",">=","+","-","*","/","=","<",">"];
+const DELIMS=["(",")",";"];
+const WS=[" ","\t","\n"];
+const isLetter=c=>c==="_"||(c>="a"&&c<="z")||(c>="A"&&c<="Z");
+const isDigit=c=>c>="0"&&c<="9";
+const inSigma=c=>{const n=c.charCodeAt(0);return n>=32&&n<=126};
+
+// ---- recognizers: return match length at i
+function longestPrefix(s,i,list){let b=0;for(const w of list)if(s.startsWith(w,i)&&w.length>b)b=w.length;return b}
+const recKeyword=(s,i)=>longestPrefix(s,i,KEYWORDS);
+function recIdent(s,i){if(i>=s.length||!isLetter(s[i]))return 0;let j=i+1;while(j<s.length&&(isLetter(s[j])||isDigit(s[j])))j++;return j-i}
+function recNumber(s,i){let j=i;while(j<s.length&&isDigit(s[j]))j++;if(j===i)return 0;
+  if(s[j]==="."&&j+1<s.length&&isDigit(s[j+1])){j++;while(j<s.length&&isDigit(s[j]))j++}return j-i}
+function recString(s,i){if(s[i]!=='"')return 0;let j=i+1;while(j<s.length&&s[j]!=='"'&&inSigma(s[j]))j++;return s[j]==='"'?j-i+1:0}
+const recOp=(s,i)=>longestPrefix(s,i,OPERATORS);
+const recDelim=(s,i)=>DELIMS.includes(s[i])?1:0;
+function recWs(s,i){let j=i;while(j<s.length&&WS.includes(s[j]))j++;return j-i}
+// order = tie-break priority
+const RECS=[["KEYWORD",recKeyword],["IDENTIFIER",recIdent],["NUMBER",recNumber],["STRING",recString],["OPERATOR",recOp],["DELIMITER",recDelim],["WHITESPACE",recWs]];
+const TYPES=["KEYWORD","IDENTIFIER","NUMBER","STRING","OPERATOR","DELIMITER","ERROR"];
+
+function tokenize(text){
+  const out=[];let i=0,line=1,col=1;
+  while(i<text.length){
+    const c=RECS.map(([n,f])=>[n,f(text,i)]).filter(x=>x[1]>0);
+    let type,len,note="";
+    if(c.length){
+      len=Math.max(...c.map(x=>x[1]));type=c.find(x=>x[1]===len)[0];
+    }else if(text[i]==='"'){
+      let e=text.indexOf("\n",i);if(e<0)e=text.length;len=e-i;type="ERROR";note="unfinished string";
+    }else{len=1;type="ERROR";note="unrecognized symbol '"+text[i]+"'"}
+    const lexeme=text.slice(i,i+len);
+    if(type!=="WHITESPACE")out.push({type,lexeme,line,col,start:i,note,cands:c});
+    for(const ch of lexeme){if(ch==="\n"){line++;col=1}else col++}
+    i+=len;
+  }
+  return out;
+}
+function explain(t){
+  if(t.type==="ERROR")return t.note+" (no recognizer matched)";
+  const p=t.cands.map(([n,l])=>n+" matched "+l+" character"+(l===1?"":"s")).join(", ");
+  if(t.cands.length===1)return t.type+" was the only match";
+  const L=t.cands.map(x=>x[1]),m=Math.max(...L);
+  return L.filter(x=>x===m).length>1?p+"; tie, so "+t.type+" wins by priority":p+"; so "+t.type+" wins";
+}
+
+// ---- UI
+const $=id=>document.getElementById(id);
+const SAMPLES={
+ok1:"total = price * 3 + 12;\n",
+ok2:"x = 0;\nwhile (x < 10)\n  print x;\n",
+ok3:'if (iffy >= 3.14) print "hello world";\nelse print "bye";\nx2 == y != z;\n',
+err1:"x = 5 @ 2\ny = 3 # 4;\n",
+err2:'print "hello;\nx = 1;\n'};
+const RULES=`Let Letter = {a..z, A..Z, _}   Digit = {0..9}   Sigma = printable ASCII
+
+KEYWORD     = {if, else, while, print}
+IDENTIFIER  = Letter . (Letter U Digit)*
+NUMBER      = Digit+ . ( ({.} . Digit+) U {epsilon} )
+STRING      = {"} . (Sigma - {"})* . {"}
+OPERATOR    = {+, -, *, /, =, ==, !=, <, >, <=, >=}
+DELIMITER   = {(, ), ;}
+WHITESPACE  = {space, tab, newline}+      (skipped, not output)
+
+L_lex = (L_KEYWORD U L_IDENT U L_NUMBER U L_STRING U L_OP U L_DELIM U L_WS)*
+
+Overlap rules:
+  1. Longest match wins        ("iffy" is one IDENTIFIER, not 'if' + 'fy')
+  2. On a tie, KEYWORD beats IDENTIFIER   ("if" is a KEYWORD)`;
+$("rules").textContent=RULES;
+$("legend").replaceChildren(...TYPES.map(t=>{const s=document.createElement("span");s.textContent=t.toLowerCase();s.style.color="var(--"+t+")";s.style.fontWeight=600;return s}));
+
+function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!==undefined)e.textContent=txt;return e}
+function setOn(i,on){document.querySelectorAll('[data-i="'+i+'"]').forEach(n=>n.classList.toggle("on",on))}
+// select a token's text inside the source box
+function pick(t){const a=$("src");a.focus();a.setSelectionRange(t.start,t.start+t.lexeme.length)}
+
+let last=[];
+function run(){
+  const text=$("src").value,toks=tokenize(text),showWhy=$("exp").checked;
+  last=toks;
+  // highlighted source
+  const hl=[];let pos=0;
+  toks.forEach((t,i)=>{
+    if(t.start>pos)hl.push(document.createTextNode(text.slice(pos,t.start)));
+    const s=el("span","t-"+t.type,t.lexeme);s.style.color="var(--"+t.type+")";s.dataset.i=i;
+    s.title=(t.type==="ERROR"?t.note:t.type)+" at "+t.line+":"+t.col;
+    s.onmouseenter=()=>setOn(i,true);s.onmouseleave=()=>setOn(i,false);
+    s.onclick=()=>pick(t);
+    hl.push(s);pos=t.start+t.lexeme.length;
+  });
+  if(pos<text.length)hl.push(document.createTextNode(text.slice(pos)));
+  if(!text.length){const p=el("span","why","Colored code appears here.");p.style.cursor="default";hl.push(p)}
+  $("hl").replaceChildren(...hl);
+  // table
+  const rows=[];
+  toks.forEach((t,i)=>{
+    const tr=el("tr",t.type==="ERROR"?"err":"");tr.dataset.i=i;
+    tr.onmouseenter=()=>setOn(i,true);tr.onmouseleave=()=>setOn(i,false);
+    tr.onclick=()=>pick(t);
+    tr.append(el("td","mono",t.line+":"+t.col));
+    const ty=el("td","chip",t.type);ty.style.color="var(--"+t.type+")";tr.append(ty);
+    const lx=el("td","mono",t.type==="ERROR"?t.note+(t.note.startsWith("unfinished")?" "+t.lexeme:""):t.lexeme);
+    if(showWhy)lx.append(el("div","why",explain(t)));
+    tr.append(lx);rows.push(tr);
+  });
+  if(!rows.length){const tr=el("tr"),td=el("td","why","No tokens yet. Type something on the left, or pick a sample.");td.colSpan=3;tr.append(td);rows.push(tr)}
+  $("rows").replaceChildren(...rows);
+  // summary
+  const cnt={};toks.forEach(t=>cnt[t.type]=(cnt[t.type]||0)+1);
+  const errs=cnt.ERROR||0;
+  const per=TYPES.filter(t=>cnt[t]).map(t=>t+"="+cnt[t]).join(", ");
+  $("summary").textContent=text.length+" characters, "+toks.length+" tokens ("+(toks.length-errs)+" valid, "+errs+" errors)"+(per?" | "+per:"");
+  // status pill
+  const st=$("status");
+  st.className="status"+(errs?" bad":"");
+  st.hidden=!toks.length;
+  st.textContent=errs?errs+(errs===1?" error found. Scanning continued after it.":" errors found. Scanning continued after each."):"No errors. Every piece matched a token language.";
+}
+function load(txt){$("src").value=txt;run()}
+$("src").addEventListener("input",run);
+$("exp").addEventListener("change",run);
+document.querySelectorAll("[data-s]").forEach(b=>b.onclick=()=>load(SAMPLES[b.dataset.s]));
+function readFile(f){if(!f)return;const r=new FileReader();r.onload=()=>load(r.result);r.readAsText(f)}
+$("file").addEventListener("change",e=>{readFile(e.target.files[0]);e.target.value=""});
+$("filebtn").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("file").click()}});
+
+// ---- added: clear, copy, drop, theme
+$("clear").onclick=()=>{load("");$("src").focus()};
+$("copy").onclick=async()=>{
+  const b=$("copy"),tsv=last.map(t=>t.line+":"+t.col+"\t"+t.type+"\t"+(t.type==="ERROR"?t.note:t.lexeme)).join("\n");
+  try{await navigator.clipboard.writeText(tsv);b.textContent="Copied"}
+  catch(e){const ta=el("textarea");ta.value=tsv;document.body.append(ta);ta.select();try{document.execCommand("copy");b.textContent="Copied"}catch(_){b.textContent="Copy failed"}ta.remove()}
+  setTimeout(()=>b.textContent="Copy tokens",1500);
+};
+const src=$("src");
+["dragenter","dragover"].forEach(ev=>src.addEventListener(ev,e=>{e.preventDefault();src.classList.add("drop")}));
+["dragleave","drop"].forEach(ev=>src.addEventListener(ev,e=>{e.preventDefault();src.classList.remove("drop")}));
+src.addEventListener("drop",e=>readFile(e.dataTransfer.files[0]));
+$("theme").onclick=()=>{
+  const d=document.documentElement,cur=d.dataset.theme||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");
+  d.dataset.theme=cur==="dark"?"light":"dark";
+};
+run();
+</script>
+</body>
+</html>

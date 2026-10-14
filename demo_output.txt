@@ -1,0 +1,66 @@
+$ python lexer.py samples/ok1_assign.txt
+LINE:COL  TYPE        LEXEME
+1:1       IDENTIFIER  total
+1:7       OPERATOR    =
+1:9       IDENTIFIER  price
+1:15      OPERATOR    *
+1:17      NUMBER      3
+1:19      OPERATOR    +
+1:21      NUMBER      12
+1:23      DELIMITER   ;
+
+Summary: 24 characters, 8 tokens (8 valid, 0 errors) | IDENTIFIER=2, NUMBER=2, OPERATOR=3, DELIMITER=1
+
+$ python lexer.py -l "iffy if" --explain
+LINE:COL  TYPE        LEXEME
+1:1       IDENTIFIER  iffy
+                      -> iffy: KEYWORD matched 2 characters, IDENTIFIER matched 4 characters; so IDENTIFIER wins
+1:6       KEYWORD     if
+                      -> if: KEYWORD matched 2 characters, IDENTIFIER matched 2 characters; tie, so KEYWORD wins by priority
+
+Summary: 7 characters, 2 tokens (2 valid, 0 errors) | KEYWORD=1, IDENTIFIER=1
+
+$ python lexer.py samples/err1_bad_symbol.txt
+LINE:COL  TYPE        LEXEME
+1:1       IDENTIFIER  x
+1:3       OPERATOR    =
+1:5       NUMBER      5
+1:7       ERROR       unrecognized symbol '@'
+1:9       NUMBER      2
+2:1       IDENTIFIER  y
+2:3       OPERATOR    =
+2:5       NUMBER      3
+2:7       ERROR       unrecognized symbol '#'
+2:9       NUMBER      4
+2:10      DELIMITER   ;
+
+Summary: 21 characters, 11 tokens (9 valid, 2 errors) | IDENTIFIER=2, NUMBER=4, OPERATOR=2, DELIMITER=1, ERROR=2
+
+$ python lexer.py samples/err2_unfinished_string.txt
+LINE:COL  TYPE        LEXEME
+1:1       KEYWORD     print
+1:7       ERROR       unfinished string "hello;
+2:1       IDENTIFIER  x
+2:3       OPERATOR    =
+2:5       NUMBER      1
+2:6       DELIMITER   ;
+
+Summary: 21 characters, 6 tokens (5 valid, 1 errors) | KEYWORD=1, IDENTIFIER=1, NUMBER=1, OPERATOR=1, DELIMITER=1, ERROR=1
+
+$ python lexer.py --rules
+Let Letter = {a..z, A..Z, _}   Digit = {0..9}   Sigma = printable ASCII
+
+KEYWORD     = {if, else, while, print}
+IDENTIFIER  = Letter . (Letter U Digit)*
+NUMBER      = Digit+ . ( ({.} . Digit+) U {epsilon} )
+STRING      = {"} . (Sigma - {"})* . {"}
+OPERATOR    = {+, -, *, /, =, ==, !=, <, >, <=, >=}
+DELIMITER   = {(, ), ;}
+WHITESPACE  = {space, tab, newline}+      (skipped, not output)
+
+L_lex = (L_KEYWORD U L_IDENT U L_NUMBER U L_STRING U L_OP U L_DELIM U L_WS)*
+
+Overlap rules:
+  1. Longest match wins        ("iffy" is one IDENTIFIER, not 'if' + 'fy')
+  2. On a tie, KEYWORD beats IDENTIFIER   ("if" is a KEYWORD)
+
