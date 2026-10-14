@@ -59,6 +59,40 @@ tbody tr{cursor:pointer}
 .tablewrap{border:1px solid var(--line);border-radius:6px}
 button:active{transform:translateY(1px)}
 @media (max-width:820px){main{padding:16px 12px 40px}.tablewrap{max-height:320px}}
+/* ---- UX polish (additive overrides) */
+body{-webkit-font-smoothing:antialiased;min-height:100vh}
+h1{font-size:1.75rem;font-weight:600;letter-spacing:-.02em}
+.sub{max-width:60ch}
+.panel{border-radius:12px;padding:18px;box-shadow:0 1px 2px rgba(20,33,61,.06)}
+h2{display:flex;align-items:center;gap:8px;font-size:1.05rem;font-weight:600}
+.badge{font:500 .78rem/1 "IBM Plex Mono",ui-monospace,monospace;padding:4px 8px;border-radius:999px;background:color-mix(in srgb,var(--OPERATOR) 14%,transparent);color:var(--OPERATOR)}
+button,label.btn,tbody tr,.code span,textarea{transition:background-color .15s,border-color .15s,box-shadow .15s}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+textarea{tab-size:4;line-height:1.7}
+textarea:focus{outline:none;border-color:var(--OPERATOR);box-shadow:0 0 0 3px color-mix(in srgb,var(--OPERATOR) 22%,transparent)}
+.code{background:color-mix(in srgb,var(--ink) 4%,transparent);border-radius:8px;line-height:1.7}
+.code span:hover{background:color-mix(in srgb,var(--hl) 70%,transparent)}
+.row{gap:8px 18px}
+.grp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.grp small{color:var(--mute);font-size:.8rem;margin-right:2px}
+button[data-s^=err]{color:var(--ERROR)}
+button[data-s^=err]:hover{border-color:var(--ERROR)}
+.meta{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline}
+.mono{font-variant-numeric:tabular-nums}
+.legend button{display:inline-flex;gap:6px;align-items:center;padding:3px 10px;border-radius:999px;font-size:.82rem;font-weight:600;background:color-mix(in srgb,currentColor 10%,transparent);border-color:color-mix(in srgb,currentColor 30%,transparent)}
+.legend button[aria-pressed=true]{background:color-mix(in srgb,currentColor 24%,transparent);border-color:currentColor}
+.legend button.zero{opacity:.45}
+.legend b{font-weight:600;opacity:.75;font-family:"IBM Plex Mono",ui-monospace,monospace}
+.status::before{content:"\2713\00a0"}
+.status.bad::before{content:"\26A0\00a0"}
+.status[hidden]{display:none}
+td.chip::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor;margin-right:7px}
+tbody tr:hover td{background:color-mix(in srgb,var(--OPERATOR) 8%,transparent)}
+tr.hide{display:none}
+th{font-weight:600;color:var(--mute);font-size:.85rem}
+@media (min-width:821px){.grid>section:last-child{position:sticky;top:16px;align-self:start}.tablewrap{max-height:calc(100vh - 230px)}}
+@media (pointer:coarse){button,label.btn{min-height:40px}}
+@media (max-width:520px){.top{flex-wrap:wrap}h1{font-size:1.4rem}}
 </style>
 </head>
 <body>
@@ -75,26 +109,29 @@ button:active{transform:translateY(1px)}
 <section class="panel">
   <h2>Source</h2>
   <div class="row">
-    <button data-s="ok1">Sample: assignment</button>
-    <button data-s="ok2">Sample: loop</button>
-    <button data-s="ok3">Sample: mixed</button>
-    <button data-s="err1">Error: bad symbol</button>
-    <button data-s="err2">Error: open string</button>
+    <div class="grp"><small>Samples</small>
+      <button data-s="ok1">Assignment</button>
+      <button data-s="ok2">Loop</button>
+      <button data-s="ok3">Mixed</button></div>
+    <div class="grp"><small>With errors</small>
+      <button data-s="err1">Bad symbol</button>
+      <button data-s="err2">Open string</button></div>
     <label class="btn" tabindex="0" id="filebtn">Open .txt<input type="file" id="file" accept=".txt,text/plain" hidden></label>
     <span class="spacer"></span>
     <button id="clear" type="button">Clear</button>
   </div>
   <textarea id="src" spellcheck="false" aria-label="Source code">total = price * 3 + 12;</textarea>
-  <p class="hint">You can also drop a .txt file onto the box.</p>
+  <div class="meta"><p class="hint">Drop a .txt file onto the box to load it.</p><p class="hint mono" id="pos"></p></div>
   <div class="code" id="hl" aria-label="Highlighted source"></div>
   <p class="hint">Click a colored piece to select it in the source box.</p>
-  <div class="legend" id="legend"></div>
+  <div class="legend" id="legend" role="group" aria-label="Filter tokens by type"></div>
+  <p class="hint" id="fnote"></p>
   <div class="status" id="status" role="status" aria-live="polite"></div>
   <div class="summary" id="summary"></div>
 </section>
 
 <section class="panel">
-  <h2>Tokens</h2>
+  <h2>Tokens <span class="badge" id="count">0</span></h2>
   <div class="row toolbar">
     <label><input type="checkbox" id="exp"> Explain why each token won</label>
     <span class="spacer"></span>
@@ -183,14 +220,30 @@ Overlap rules:
   1. Longest match wins        ("iffy" is one IDENTIFIER, not 'if' + 'fy')
   2. On a tie, KEYWORD beats IDENTIFIER   ("if" is a KEYWORD)`;
 $("rules").textContent=RULES;
-$("legend").replaceChildren(...TYPES.map(t=>{const s=document.createElement("span");s.textContent=t.toLowerCase();s.style.color="var(--"+t+")";s.style.fontWeight=600;return s}));
 
 function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!==undefined)e.textContent=txt;return e}
 function setOn(i,on){document.querySelectorAll('[data-i="'+i+'"]').forEach(n=>n.classList.toggle("on",on))}
 // select a token's text inside the source box
 function pick(t){const a=$("src");a.focus();a.setSelectionRange(t.start,t.start+t.lexeme.length)}
 
+// ---- UX: legend doubles as a type filter, with counts
+const FHINT="Click a type to show only those tokens in the table.";
+const flt=new Set();
 let last=[];
+function applyFilter(){let n=0;
+  document.querySelectorAll("#rows tr[data-i]").forEach(tr=>{const ok=!flt.size||flt.has(last[tr.dataset.i].type);tr.classList.toggle("hide",!ok);if(ok)n++});
+  $("fnote").textContent=flt.size?"Showing "+n+" of "+last.length+" tokens. Click the type again to clear.":FHINT}
+function enhance(toks,cnt){
+  $("count").textContent=toks.length;
+  $("legend").replaceChildren(...TYPES.map(t=>{
+    const b=el("button");b.type="button";b.style.color="var(--"+t+")";
+    b.setAttribute("aria-pressed",flt.has(t));if(!cnt[t])b.classList.add("zero");
+    b.append(t.toLowerCase()+" ",el("b","",cnt[t]||0));
+    b.onclick=()=>{flt.has(t)?flt.delete(t):flt.add(t);b.setAttribute("aria-pressed",flt.has(t));applyFilter()};
+    return b}));
+  applyFilter();
+}
+
 function run(){
   const text=$("src").value,toks=tokenize(text),showWhy=$("exp").checked;
   last=toks;
@@ -231,8 +284,9 @@ function run(){
   st.className="status"+(errs?" bad":"");
   st.hidden=!toks.length;
   st.textContent=errs?errs+(errs===1?" error found. Scanning continued after it.":" errors found. Scanning continued after each."):"No errors. Every piece matched a token language.";
+  enhance(toks,cnt);
 }
-function load(txt){$("src").value=txt;run()}
+function load(txt){$("src").value=txt;run();showPos()}
 $("src").addEventListener("input",run);
 $("exp").addEventListener("change",run);
 document.querySelectorAll("[data-s]").forEach(b=>b.onclick=()=>load(SAMPLES[b.dataset.s]));
@@ -256,6 +310,12 @@ $("theme").onclick=()=>{
   const d=document.documentElement,cur=d.dataset.theme||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");
   d.dataset.theme=cur==="dark"?"light":"dark";
 };
+
+// ---- UX: cursor position readout
+function showPos(){const a=$("src"),s0=a.selectionStart,b=a.value.slice(0,s0).split("\n"),n=a.selectionEnd-s0;
+  $("pos").textContent="Ln "+b.length+", Col "+(b[b.length-1].length+1)+(n?" ("+n+" selected)":"")}
+["input","keyup","click","select","focus"].forEach(e=>src.addEventListener(e,showPos));
+showPos();
 run();
 </script>
 </body>
