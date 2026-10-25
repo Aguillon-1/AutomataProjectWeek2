@@ -1,4 +1,4 @@
-# Mini Tokenizer / Lexer
+# Lexer
 
 A hand-written lexer where every token type is a formal language.
 Python 3, standard library only (no `re`). `colorama` optional.
