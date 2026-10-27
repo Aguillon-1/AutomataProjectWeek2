@@ -1,6 +1,8 @@
 # Mini Tokenizer / Lexer: User Guide
 
 Python 3, standard library only (`colorama` is optional for color on older Windows).
+The language being tokenized is Python-like; the project does not attempt to
+execute Python or validate full Python grammar.
 
 ## Run it
     python lexer.py samples/ok1_assign.txt        # a .txt source file
@@ -27,6 +29,16 @@ Exit code is 1 if any ERROR token was found, else 0.
 1. Longest match wins: `iffy` is one IDENTIFIER.
 2. On a tie, KEYWORD beats IDENTIFIER: `if` is a KEYWORD.
 
+## Python-like features
+- Python keywords such as `def`, `return`, `for`, `in`, `True`, `False`, and `None`
+- Single- and double-quoted strings with backslash escapes
+- `#` comments
+- Python-style operators including `%`, `**`, `//`, `+=`, and `->`
+- Brackets, braces, commas, colons, and periods
+- `NEWLINE`, `INDENT`, and `DEDENT` tokens for indentation-aware programs
+
+The lexer recognizes token structure only. It does not parse or execute programs.
+
 ## Limits
 Lexing only (`5 + + 3` is fine). Strings are single-line, no escapes. No comments.
 No negative literals (`-` is an operator). `3.` lexes as NUMBER `3` then an error for `.`.
@@ -36,7 +48,7 @@ Clean: `ok1_assign.txt`, `ok2_loop.txt`, `ok3_mixed.txt`
 Errors: `err1_bad_symbol.txt`, `err2_unfinished_string.txt`
 
 ## Web version
-Open `web/index.html` in a browser.
+Open `index.html` in a browser.
 - Type in the Source box: tokens update live, and the code below it is colored by token type.
 - Hover a token (in the colored code or the table) to highlight its match.
 - Tick "Explain why each token won" to see match lengths per recognizer.

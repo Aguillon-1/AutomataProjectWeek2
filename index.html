@@ -218,10 +218,10 @@ details.panel summary::before{--i:var(--i-book);margin-right:8px;vertical-align:
 
 <script>
 // ---- alphabets
-const KEYWORDS=["if","else","while","print"];
-const OPERATORS=["==","!=","<=",">=","+","-","*","/","=","<",">"];
-const DELIMS=["(",")",";"];
-const WS=[" ","\t","\n"];
+const KEYWORDS=["and","as","class","def","elif","else","False","for","from","if","import","in","is","None","not","or","print","return","True","while"];
+const OPERATORS=["**","//","==","!=","<=",">=","+=","-=","*=","/=","->","+","-","*","/","%","=","<",">"];
+const DELIMS=["(",")","[","]","{","}",",",":",";", "."];
+const WS=[" ","\t"];
 const isLetter=c=>c==="_"||(c>="a"&&c<="z")||(c>="A"&&c<="Z");
 const isDigit=c=>c>="0"&&c<="9";
 const inSigma=c=>{const n=c.charCodeAt(0);return n>=32&&n<=126};
@@ -232,22 +232,33 @@ const recKeyword=(s,i)=>longestPrefix(s,i,KEYWORDS);
 function recIdent(s,i){if(i>=s.length||!isLetter(s[i]))return 0;let j=i+1;while(j<s.length&&(isLetter(s[j])||isDigit(s[j])))j++;return j-i}
 function recNumber(s,i){let j=i;while(j<s.length&&isDigit(s[j]))j++;if(j===i)return 0;
   if(s[j]==="."&&j+1<s.length&&isDigit(s[j+1])){j++;while(j<s.length&&isDigit(s[j]))j++}return j-i}
-function recString(s,i){if(s[i]!=='"')return 0;let j=i+1;while(j<s.length&&s[j]!=='"'&&inSigma(s[j]))j++;return s[j]==='"'?j-i+1:0}
+function recString(s,i){const q=s[i];if(q!=='"'&&q!=="'")return 0;let j=i+1;while(j<s.length&&s[j]!=="\n"){if(s[j]==="\\")j+=2;else if(s[j]===q)return j-i+1;else j++}return 0}
+function recComment(s,i){if(s[i]!=="#")return 0;let e=s.indexOf("\n",i);return (e<0?s.length:e)-i}
 const recOp=(s,i)=>longestPrefix(s,i,OPERATORS);
 const recDelim=(s,i)=>DELIMS.includes(s[i])?1:0;
 function recWs(s,i){let j=i;while(j<s.length&&WS.includes(s[j]))j++;return j-i}
 // order = tie-break priority
-const RECS=[["KEYWORD",recKeyword],["IDENTIFIER",recIdent],["NUMBER",recNumber],["STRING",recString],["OPERATOR",recOp],["DELIMITER",recDelim],["WHITESPACE",recWs]];
-const TYPES=["KEYWORD","IDENTIFIER","NUMBER","STRING","OPERATOR","DELIMITER","ERROR"];
+const RECS=[["KEYWORD",recKeyword],["IDENTIFIER",recIdent],["NUMBER",recNumber],["STRING",recString],["COMMENT",recComment],["OPERATOR",recOp],["DELIMITER",recDelim],["WHITESPACE",recWs]];
+const TYPES=["KEYWORD","IDENTIFIER","NUMBER","STRING","COMMENT","OPERATOR","DELIMITER","NEWLINE","INDENT","DEDENT","ERROR"];
 
 function tokenize(text){
-  const out=[];let i=0,line=1,col=1;
+  const out=[];let i=0,line=1,col=1,atStart=true,indents=[0];
   while(i<text.length){
+    if(atStart){
+      const start=i;while(i<text.length&&WS.includes(text[i]))i++;
+      const indent=i-start;
+      if(i<text.length&&text[i]!=="\n"&&text[i]!=="#"){
+        if(indent>indents[indents.length-1]){indents.push(indent);out.push({type:"INDENT",lexeme:text.slice(start,i),line,col:1,start,note:"",cands:[]})}
+        while(indent<indents[indents.length-1]){indents.pop();out.push({type:"DEDENT",lexeme:"",line,col:1,start:i,note:"",cands:[]})}
+      }
+      col=indent+1;atStart=false;if(i>=text.length)break;
+    }
+    if(text[i]==="\n"){out.push({type:"NEWLINE",lexeme:"\\n",line,col,start:i,note:"",cands:[]});i++;line++;col=1;atStart=true;continue}
     const c=RECS.map(([n,f])=>[n,f(text,i)]).filter(x=>x[1]>0);
     let type,len,note="";
     if(c.length){
       len=Math.max(...c.map(x=>x[1]));type=c.find(x=>x[1]===len)[0];
-    }else if(text[i]==='"'){
+    }else if(text[i]==='"'||text[i]==="'"){
       let e=text.indexOf("\n",i);if(e<0)e=text.length;len=e-i;type="ERROR";note="unfinished string";
     }else{len=1;type="ERROR";note="unrecognized symbol '"+text[i]+"'"}
     const lexeme=text.slice(i,i+len);
@@ -255,10 +266,12 @@ function tokenize(text){
     for(const ch of lexeme){if(ch==="\n"){line++;col=1}else col++}
     i+=len;
   }
+  while(indents.length>1){indents.pop();out.push({type:"DEDENT",lexeme:"",line,col,start:i,note:"",cands:[]})}
   return out;
 }
 function explain(t){
   if(t.type==="ERROR")return t.note+" (no recognizer matched)";
+  if(!t.cands.length)return t.type+" was emitted from indentation structure";
   const p=t.cands.map(([n,l])=>n+" matched "+l+" character"+(l===1?"":"s")).join(", ");
   if(t.cands.length===1)return t.type+" was the only match";
   const L=t.cands.map(x=>x[1]),m=Math.max(...L);
@@ -270,18 +283,24 @@ const $=id=>document.getElementById(id);
 const SAMPLES={
 ok1:"total = price * 3 + 12;\n",
 ok2:"x = 0;\nwhile (x < 10)\n  print x;\n",
-ok3:'if (iffy >= 3.14) print "hello world";\nelse print "bye";\nx2 == y != z;\n',
+ok3:'def greet(name):\n    # say hello\n    print("Hello, " + name)\n',
 err1:"x = 5 @ 2\ny = 3 # 4;\n",
 err2:'print "hello;\nx = 1;\n'};
-const RULES=`Let Letter = {a..z, A..Z, _}   Digit = {0..9}   Sigma = printable ASCII
+const RULES=`Python-like lexical language
+
+KEYWORD     = {and, as, class, def, elif, else, False, for, from, if, import,
+               in, is, None, not, or, print, return, True, while}
 
 KEYWORD     = {if, else, while, print}
 IDENTIFIER  = Letter . (Letter U Digit)*
 NUMBER      = Digit+ . ( ({.} . Digit+) U {epsilon} )
-STRING      = {"} . (Sigma - {"})* . {"}
-OPERATOR    = {+, -, *, /, =, ==, !=, <, >, <=, >=}
-DELIMITER   = {(, ), ;}
-WHITESPACE  = {space, tab, newline}+      (skipped, not output)
+STRING      = single- or double-quoted, with backslash escapes
+COMMENT     = # . (Sigma - {newline})*
+OPERATOR    = {+, -, *, /, %, =, ==, !=, <, >, <=, >=, **, //, +=, -=, *=, /=, ->}
+DELIMITER   = {(, ), [, ], {, }, ,, :, ;, .}
+NEWLINE     = {newline}
+INDENT/DEDENT = changes in leading indentation
+WHITESPACE  = {space, tab}+                 (skipped)
 
 L_lex = (L_KEYWORD U L_IDENT U L_NUMBER U L_STRING U L_OP U L_DELIM U L_WS)*
 

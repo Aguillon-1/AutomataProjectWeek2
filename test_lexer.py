@@ -35,6 +35,31 @@ class LexerTests(unittest.TestCase):
     def test_grammar_not_checked(self):
         self.assertTrue(all(t.type != "ERROR" for t in tokenize("5 + + 3")))
 
+    def test_python_like_tokens(self):
+        self.assertEqual(
+            kinds("def greet(name):\n    # hi\n    return 'Hello, ' + name\n"),
+            [
+                ("KEYWORD", "def"), ("IDENTIFIER", "greet"),
+                ("DELIMITER", "("), ("IDENTIFIER", "name"),
+                ("DELIMITER", ")"), ("DELIMITER", ":"),
+                ("NEWLINE", "\\n"), ("COMMENT", "# hi"),
+                ("NEWLINE", "\\n"), ("INDENT", "    "),
+                ("KEYWORD", "return"), ("STRING", "'Hello, '"),
+                ("OPERATOR", "+"), ("IDENTIFIER", "name"),
+                ("NEWLINE", "\\n"), ("DEDENT", ""),
+            ],
+        )
+
+    def test_python_operators_and_keywords(self):
+        self.assertEqual(
+            kinds("True and value ** 2 // 1"),
+            [
+                ("KEYWORD", "True"), ("KEYWORD", "and"),
+                ("IDENTIFIER", "value"), ("OPERATOR", "**"),
+                ("NUMBER", "2"), ("OPERATOR", "//"), ("NUMBER", "1"),
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

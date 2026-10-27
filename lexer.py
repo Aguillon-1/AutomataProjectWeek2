@@ -10,10 +10,13 @@ import argparse
 from collections import Counter
 
 # ---------------------------------------------------------------- alphabets
-KEYWORDS  = ("if", "else", "while", "print")
-OPERATORS = ("==", "!=", "<=", ">=", "+", "-", "*", "/", "=", "<", ">")
-DELIMS    = ("(", ")", ";")
-WS_CHARS  = (" ", "\t", "\n")
+KEYWORDS  = ("and", "as", "class", "def", "elif", "else", "False",
+             "for", "from", "if", "import", "in", "is", "None", "not",
+             "or", "print", "return", "True", "while")
+OPERATORS = ("**", "//", "==", "!=", "<=", ">=", "+=", "-=", "*=", "/=",
+             "->", "+", "-", "*", "/", "%", "=", "<", ">")
+DELIMS    = ("(", ")", "[", "]", "{", "}", ",", ":", ";", ".")
+WS_CHARS  = (" ", "\t")
 
 
 def is_letter(c):            # Letter = {a-z, A-Z, _}
@@ -46,7 +49,7 @@ def rec_identifier(s, i):    # Letter (Letter U Digit)*
     return j - i
 
 
-def rec_number(s, i):        # Digit+ ( '.' Digit+ | epsilon )
+def rec_number(s, i):        # integer or decimal literal
     j = i
     while j < len(s) and is_digit(s[j]):
         j += 1
@@ -59,15 +62,26 @@ def rec_number(s, i):        # Digit+ ( '.' Digit+ | epsilon )
     return j - i
 
 
-def rec_string(s, i):        # '"' (Sigma - {'"'})* '"'
-    if i >= len(s) or s[i] != '"':
+def rec_string(s, i):        # single- or double-quoted string
+    if i >= len(s) or s[i] not in ('"', "'"):
         return 0
+    quote = s[i]
     j = i + 1
-    while j < len(s) and s[j] != '"' and in_sigma(s[j]):
-        j += 1
-    if j < len(s) and s[j] == '"':
-        return j - i + 1
+    while j < len(s) and s[j] != "\n":
+        if s[j] == "\\":
+            j += 2
+        elif s[j] == quote:
+            return j - i + 1
+        else:
+            j += 1
     return 0                 # unfinished -> handled as an error by the main loop
+
+
+def rec_comment(s, i):
+    if i >= len(s) or s[i] != "#":
+        return 0
+    end = s.find("\n", i)
+    return (len(s) if end == -1 else end) - i
 
 
 def rec_operator(s, i):
@@ -82,7 +96,7 @@ def rec_delimiter(s, i):
     return 1 if i < len(s) and s[i] in DELIMS else 0
 
 
-def rec_whitespace(s, i):    # {space, tab, newline}+
+def rec_whitespace(s, i):    # horizontal whitespace
     j = i
     while j < len(s) and s[j] in WS_CHARS:
         j += 1
@@ -95,22 +109,30 @@ RECOGNIZERS = [
     ("IDENTIFIER", rec_identifier),
     ("NUMBER",     rec_number),
     ("STRING",     rec_string),
+    ("COMMENT",    rec_comment),
     ("OPERATOR",   rec_operator),
     ("DELIMITER",  rec_delimiter),
     ("WHITESPACE", rec_whitespace),
 ]
-TYPE_ORDER = [n for n, _ in RECOGNIZERS if n != "WHITESPACE"] + ["ERROR"]
+TYPE_ORDER = [n for n, _ in RECOGNIZERS if n not in ("WHITESPACE",)] + [
+    "NEWLINE", "INDENT", "DEDENT", "ERROR"
+]
 
 RULES = """\
 Let Letter = {a..z, A..Z, _}   Digit = {0..9}   Sigma = printable ASCII
 
-KEYWORD     = {if, else, while, print}
+KEYWORD     = {and, as, class, def, elif, else, False, for, from, if, import,
+               in, is, None, not, or, print, return, True, while}
 IDENTIFIER  = Letter . (Letter U Digit)*
 NUMBER      = Digit+ . ( ({.} . Digit+) U {epsilon} )
-STRING      = {"} . (Sigma - {"})* . {"}
-OPERATOR    = {+, -, *, /, =, ==, !=, <, >, <=, >=}
-DELIMITER   = {(, ), ;}
-WHITESPACE  = {space, tab, newline}+      (skipped, not output)
+STRING      = {"} . (escaped character U (Sigma - {"}))* . {"}
+              or {'} . (escaped character U (Sigma - {'}))* . {'}
+COMMENT     = # . (Sigma - {newline})*
+OPERATOR    = {+, -, *, /, %, =, ==, !=, <, >, <=, >=, **, //, +=, -=, *=, /=, ->}
+DELIMITER   = {(, ), [, ], {, }, ,, :, ;, .}
+NEWLINE     = {newline}
+INDENT/DEDENT = changes in leading indentation
+WHITESPACE  = {space, tab}+                 (skipped)
 
 L_lex = (L_KEYWORD U L_IDENT U L_NUMBER U L_STRING U L_OP U L_DELIM U L_WS)*
 
@@ -121,7 +143,9 @@ Overlap rules:
 
 COLORS = {
     "KEYWORD": "\033[35m", "IDENTIFIER": "\033[36m", "NUMBER": "\033[33m",
-    "STRING": "\033[32m", "OPERATOR": "\033[34m", "DELIMITER": "\033[37m",
+    "STRING": "\033[32m", "COMMENT": "\033[90m", "OPERATOR": "\033[34m",
+    "DELIMITER": "\033[37m", "NEWLINE": "\033[36m", "INDENT": "\033[36m",
+    "DEDENT": "\033[36m",
     "ERROR": "\033[1;31m",
 }
 RESET = "\033[0m"
@@ -137,7 +161,33 @@ class Token:
 
 def tokenize(text):
     tokens, i, line, col = [], 0, 1, 1
+    indent_stack = [0]
+    at_line_start = True
     while i < len(text):
+        if at_line_start:
+            start = i
+            while i < len(text) and text[i] in WS_CHARS:
+                i += 1
+            indent = i - start
+            if i < len(text) and text[i] not in "\n#":
+                if indent > indent_stack[-1]:
+                    indent_stack.append(indent)
+                    tokens.append(Token("INDENT", text[start:i], line, 1))
+                while indent < indent_stack[-1]:
+                    indent_stack.pop()
+                    tokens.append(Token("DEDENT", "", line, 1))
+                col = indent + 1
+            else:
+                col = indent + 1
+            at_line_start = False
+            if i >= len(text):
+                break
+        if text[i] == "\n":
+            tokens.append(Token("NEWLINE", "\\n", line, col))
+            line, col = line + 1, 1
+            i += 1
+            at_line_start = True
+            continue
         cands = [(name, f(text, i)) for name, f in RECOGNIZERS]
         cands = [(n, l) for n, l in cands if l > 0]
         if cands:
@@ -147,7 +197,7 @@ def tokenize(text):
             if winner != "WHITESPACE":
                 tokens.append(Token(winner, lexeme, line, col, candidates=cands))
         else:
-            if text[i] == '"':   # opening quote with no valid close
+            if text[i] in ('"', "'"):   # opening quote with no valid close
                 end = text.find("\n", i)
                 end = len(text) if end == -1 else end
                 lexeme = text[i:end]
@@ -160,9 +210,13 @@ def tokenize(text):
         for ch in lexeme:        # advance position
             if ch == "\n":
                 line, col = line + 1, 1
+                at_line_start = True
             else:
                 col += 1
         i += len(lexeme)
+    while len(indent_stack) > 1:
+        indent_stack.pop()
+        tokens.append(Token("DEDENT", "", line, col))
     return tokens
 
 
@@ -170,6 +224,8 @@ def tokenize(text):
 def explain(tok):
     if tok.type == "ERROR":
         return tok.note + " (no recognizer matched)"
+    if not tok.candidates:
+        return f"{tok.type} was emitted from indentation structure"
     parts = ", ".join(f"{n} matched {l} character{'s' if l != 1 else ''}"
                       for n, l in tok.candidates)
     lens = [l for _, l in tok.candidates]
