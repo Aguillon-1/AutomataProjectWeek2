@@ -119,6 +119,23 @@ tbody tr.err td:first-child{box-shadow:inset 3px 0 0 var(--ERROR)}
 .summary{font-size:.85rem}
 details.panel summary{font-size:1.05rem}
 pre.rules{padding-top:10px;color:color-mix(in srgb,var(--ink) 88%,transparent)}
+/* ---- tablet and iPad layout */
+html{overflow-x:hidden}
+body{min-height:100dvh;overscroll-behavior-x:none}
+@media (max-width:1024px){
+  main{padding-top:max(20px,env(safe-area-inset-top));padding-right:max(16px,env(safe-area-inset-right));padding-bottom:max(48px,env(safe-area-inset-bottom));padding-left:max(16px,env(safe-area-inset-left))}
+  .grid{grid-template-columns:1fr}
+  .grid>section:last-child{position:static}
+  .tablewrap{-webkit-overflow-scrolling:touch}
+}
+@media (pointer:coarse){
+  button,label.btn{min-height:44px}
+  textarea{min-height:200px}
+  .tablewrap{touch-action:pan-x pan-y}
+}
+@media (hover:none){
+  button:hover,label.btn:hover{transform:none}
+}
 </style>
 <style>
 @import url("https://fonts.googleapis.com/css2?family=Michroma&display=swap");
